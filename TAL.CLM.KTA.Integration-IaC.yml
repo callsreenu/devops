@@ -1,0 +1,129 @@
+parameters:
+- name: serviceConnection
+  displayName: 'KTA Outbound'
+  type: string
+  default: 'claims-ktaintegration-dev-service-connection'
+- name: appName
+  displayName: 'Name of application'
+  type: string
+  default: 'claims-ktaintegration'
+- name: environmentName
+  displayName: 'Name of environemnt'
+  type: string
+  default: 'dev'
+  values:
+  - 'dev'
+  - 'qa'
+  - 'uat'
+  - 'prodsyd'
+  - 'prodmel'
+pool:
+  name: 'AzureSelfHostedAgentInfra'
+stages:
+- stage: ManualIntervention
+  jobs:
+  - job: ManualApproval
+    pool:
+      name: server
+    displayName: Wait for manual approval
+    steps:
+    - task: ManualValidation@0
+      inputs:
+        notifyUsers: "soujanya.vangapelli@tal.com.au;nauman.khan@tal.com.au;pramod.bilikenchappa@tal.com.au;varun.sivasankaran@tal.com.au;william.han@tal.com.au;sandeep.mosala@tal.com.au;sourabh.chhabra@tal.com.au;prathyush.velury@tal.com.au"
+        instructions: "Manual intervention required for deployment in Production Subscription."
+- stage: IaC
+  dependsOn:
+  - ManualIntervention
+  variables:
+  - group: claims-ktaintegration-dev_variables
+  - name: terraformDirectory
+    value: '$(Build.Repository.LocalPath)/Iac.Files/azure/terraform'
+  displayName: Master IaC
+  jobs:
+  - job: iac_job
+    displayName: Executing Terraform scripts
+    steps:
+    - task: TerraformInstaller@0
+      inputs:
+        terraformVersion: '1.1.7'
+    - task: DownloadSecureFile@1
+      displayName: 'Download terraform.rc config file for CLI'
+      inputs:
+        secureFile: 'terraform.rc'
+    - task: PowerShell@2
+      displayName: 'Create and Inspect terraform.auto.tfvars'
+      inputs:
+        targetType: 'inline'
+        script: |
+          $inFileCommon = "$(terraformDirectory)/variables.tf"
+          $outFile = "$(terraformDirectory)/terraform.auto.tfvars"
+          $content = select-string -path "$inFileCommon" -Pattern 'variable "(.*)"' | % { $_.Matches[0].Groups[1].Value } | % { $_ + "=""" + ('$env:'+ $_ | Invoke-Expression) + """" }
+          [IO.File]::WriteAllLines($outFile, $content)
+
+          Get-Content "$(Build.Repository.LocalPath)/Iac.Files/azure/terraform/terraform.rc"	
+
+          Write-Output $content
+          Get-Content "$outFile"
+    - task: AzureCLI@2
+      displayName: 'Master terraform apply'
+      inputs:
+        azureSubscription: claims-ktaintegration-dev-service-connection
+        scriptType: 'ps'
+        powerShellErrorActionPreference: 'continue'
+        scriptLocation: 'inlineScript'
+        inlineScript: "$env:TF_WORKSPACE=\"$(terraformWorkspace)\"\n$env:TF_LOG=\"TRACE\"\n$directoryInfo = Get-ChildItem $pwd | Measure-Object\nif ($directoryInfo.count -eq 0) {\n  echo \"Terraform directory '$pwd' is empty!\"\n  exit 1\n}\n\nterraform init -upgrade\nterraform validate\nterraform plan -detailed-exitcode\n\nif ($LastExitCode -eq 1) {\n  echo \"Terraform plan returned an error\"\n  exit 1\n}\n\nif ($LastExitCode -eq 0) {\n  echo \"Terraform plan indicates no changes - skipping apply\"\n}\nelse\n{\n  if (\"dev\" -eq \"prodsyd\" -Or \"dev\" -eq \"prodmel\") \n  {\n    terraform apply\n  }\n  else {\n    terraform apply -auto-approve\n  }\n\n  if ($LastExitCode -ne 0) {\n    echo \"Terraform apply failed!\"\n    exit 1\n  }\n}\nterraform output -json > terraformVariables.json\n"
+        addSpnToEnvironment: true
+        workingDirectory: '$(terraformDirectory)'
+        failOnStandardError: true
+      env:
+        TF_CLI_CONFIG_FILE: "$(Agent.TempDirectory)/terraform.rc"
+- stage: Certs
+  dependsOn:
+  - IaC
+  variables:
+  - group: claims-ktaintegration-dev_variables
+  - name: terraformDirectory
+    value: '$(Build.Repository.LocalPath)/Iac.Files/azure/terraform'
+  displayName: Apply Certs
+  jobs:
+  - job: certificate_job
+    condition: eq(variables['uploadCerts'], 'true')
+    displayName: Uploading Certificates
+    steps:
+    - task: DownloadSecureFile@1
+      name: talRootCA
+      displayName: Download TALRootCA-dev.cer
+      inputs:
+        secureFile: TALRootCA-dev.cer
+    - task: DownloadSecureFile@1
+      name: talIntermediateCA
+      displayName: Download TALInterLimitedCertificationAuthority-dev.cer
+      inputs:
+        secureFile: TALInterLimitedCertificationAuthority-dev.cer
+    - task: AzureCLI@2
+      displayName: 'Upload certificates'
+      inputs:
+        azureSubscription: claims-ktaintegration-dev-service-connection
+        scriptType: 'ps'
+        powerShellErrorActionPreference: 'continue'
+        scriptLocation: 'inlineScript'
+        inlineScript: |-
+          if ("$(UploadCerts)" -eq "true") {
+            $rootCer = New-Object System.Security.Cryptography.X509Certificates.X509Certificate
+            $rootCer.Import("$(talRootCA.secureFilePath)")
+            #$rootCaExpiry = #Get-Date $rootCer.GetExpirationDateString()
+            $rootCaExpiryUtc = (Get-Date).AddDays(365).ToString("yyyy-MM-ddTHH:mm:ssZ") #$rootCaExpiry.ToString("yyyy-MM-ddTHH:mm:ssZ")
+
+            $intCer = New-Object System.Security.Cryptography.X509Certificates.X509Certificate
+            $intCer.Import("$(talIntermediateCA.secureFilePath)")
+            #$intCaExpiry = Get-Date $intCer.GetExpirationDateString()
+            $intCaExpiryUtc = (Get-Date).AddDays(365).ToString("yyyy-MM-ddTHH:mm:ssZ") #$intCaExpiry.ToString("yyyy-MM-ddTHH:mm:ssZ")
+
+            az keyvault secret set --name "$(RootCAName)" --vault-name "$(CertKvName)" `
+              --file "$(talRootCA.secureFilePath)" --expires $rootCaExpiryUtc `
+              --query '{attributes:attributes, contentType:contentType, id:id, name:name}'
+            az keyvault secret set --name "$(IntCAName)" --vault-name "$(CertKvName)" `
+              --file "$(talIntermediateCA.secureFilePath)" --expires $intCaExpiryUtc `
+              --query '{attributes:attributes, contentType:contentType, id:id, name:name}'
+          }
+
