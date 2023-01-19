@@ -1,0 +1,300 @@
+This page provides Build pipeline and release pipeline steps in Azure DevOps and updated few of critical issues, which we found during build and deployment phases.
+
+Environment Details:
+
+Environment
+
+Web Server(s)
+
+App Server(s)
+
+TFS URL
+
+Octopus URL
+
+Azure DevOps URL
+
+DEV
+
+DC1DEV304
+
+DC1DEV305
+
+$/OnlineRegistrations/Releases/R1/TAL.OnlineRegistrations.Web
+
+http://octopus/app#/projects/online-registrations-new/overview
+
+https://dev.azure.com/TALContinuousDelivery/TAL.RLS.AdviserManagement/_build?definitionId=1848
+
+Steps taken for Migrating OnlineRegistrations Web Application into Azure DevOps:
+
+Created project (TAL.RLS.AdviserManagement) in Azure DevOps (refer below confluence page)
+
+ 
+
+Raised a servicenow ticket to create AD groups (.uDvpsRlsAdviserAdm, .uDvpsRlsAdviserCont and .uDvpsRlsAdviserRdr) - (refer below confluence page)
+
+URL: 
+
+Agent Installations in Web and APP servers (refer below confluence page)
+
+ 
+
+Migrated repo from TFS to Azure Repo (refer below confluence page)
+
+ 
+
+Repo URL : TAL.RLS.OnlineRegistrations - Repos (azure.com)
+
+Created Build Pipeline in Azure DevOps using YAML script.
+
+Build Pipeline URL: https://dev.azure.com/TALContinuousDelivery/TAL.RLS.AdviserManagement/_build?definitionId=1848
+
+OnlineRegistrations Web build pipeline screen shot.
+
+
+
+   c. Run build pipeline and publish the artefacts in Azure Artifacts.
+
+
+
+
+
+
+
+6. Created Release Pipeline in Azure DevOps
+
+Configure Tasks Groups.
+
+
+
+Configure Variable Groups.
+
+
+
+Create release pipeline by integrating build pipeline for DEV environment and enable to continuous deployment.
+
+
+
+
+
+
+
+Run the build pipeline and navigate to release pipeline to view the continuous deployment in DEV environment. 
+
+
+
+Deployment is successful in the DEV environment and able to access the deployed web url.
+
+
+
+
+
+Issues faced during Build and Release pipelines development:
+
+OnlineRegistrations Web - Build Pipeline Issue
+
+Once build pipeline is created, tested the pipeline but faced below issue on VSBuild & VSTest stages. 
+
+Issues Details:
+
+2022-08-17T00:55:39.2693187Z System.IO.FileNotFoundException: Could not load file or assembly 'Newtonsoft.Json, Version=5.0.4.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed' or one of its dependencies. The system cannot find the file specified. ---> System.IO.FileNotFoundException: Could not load file or assembly 'Newtonsoft.Json, Version=4.5.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed' or one of its dependencies. The system cannot find the file specified.WRN: Assembly binding logging is turned OFF.
+2022-08-17T00:55:39.2694422Z To enable assembly bind failure logging, set the registry value [HKLM\Software\Microsoft\Fusion!EnableLog] (DWORD) to 1.
+2022-08-17T00:55:39.2695038Z Note: There is some performance penalty associated with assembly bind failure logging.
+2022-08-17T00:55:39.2695618Z To turn this feature off, remove the registry value [HKLM\Software\Microsoft\Fusion!EnableLog].
+2022-08-17T00:55:39.2696083Z   Stack Trace:
+2022-08-17T00:55:39.2696568Z       at TAL.OR.Web.Controllers.RegistrationController.GetAdviserDetails(DistributorAgreementViewModel model)
+2022-08-17T00:55:39.2697514Z    at TAL.OR.Web.Controllers.Tests.RegistrationControllerTests.GetAdviserDetails_WithDistributorNo_GeneratesRegistrationModelforDistributor() in D:\Azureagent\_work\179\s\TAL.OnlineRegistrations.Web\TAL.OR.Web.Controllers.Tests\RegistrationControllerTests.cs:line 509
+
+Below Activities were performed to resolve the issue :
+
+First & Second Attempt: Failed
+
+Installed VS 2015 on the Agent server
+
+Updated repo files on below files.
+
+     Updated existing versions of NewtonSoft.Json 4.5.0 / 5.0.4 to 6.0.1 / 6.0.0.0 values in Controllers.csproj file from folder /TAL.OnlineRegistrations.Web/TAL.OR.Web.Controllers/
+
+
+
+b. When re-build pipeline but still issue exists with the same error with different version.
+
+Failed   GetAdviserDetails_WithDistributorNo_GeneratesRegistrationModelforDistributor
+Error Message:
+Test method TAL.OR.Web.Controllers.Tests.RegistrationControllerTests.GetAdviserDetails_WithDistributorNo_GeneratesRegistrationModelforDistributor threw exception:
+System.IO.FileNotFoundException: Could not load file or assembly 'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed' or one of its dependencies. The system cannot find the file specified.WRN: Assembly binding logging is turned OFF.
+
+Third Attempt (Agent Server): Passed
+
+Scheduled a meeting developer to test it manually to see if the same issue exist.
+
+Opened Visual Studio imported TAL.OnlineRegistrations.Web.sln file
+
+Run all the teste cases in Visual studio but everything looks fine and no issues found.
+
+Fourth Attempt (Manual Execution via command line): Failed first and then Passed
+
+Scheduled one more meeting with developer to run the test cases via command line to see if the same issue exist
+
+Open “Windows Power Shell” and run below commands
+
+PS C:\Program Files (x86)\Microsoft Visual Studio 14.0\Common7\IDE\CommonExtensions\Microsoft\TestWindow> .\vstest.console.exe "D:\AzureAgent_work\113\s\TAL.OnlineRegistrations.Web\TAL.OR.Web.Controllers.Tests\bin\Release\TAL.OR.Web.Controllers.Tests.dll"
+
+Failed   GetAdviserDetails_WithDistributorNo_GeneratesRegistrationModelforDistributor
+Error Message:
+Test method TAL.OR.Web.Controllers.Tests.RegistrationControllerTests.GetAdviserDetails_WithDistributorNo_GeneratesRegistrationModelforDistributor threw exception:
+System.IO.FileNotFoundException: Could not load file or assembly 'Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed' or one of its dependencies. The system cannot find the file specified.WRN: Assembly binding logging is turned OFF.
+To enable assembly bind failure logging, set the registry value [HKLM\Software\Microsoft\Fusion!EnableLog] (DWORD) to 1.
+Note: There is some performance penalty associated with assembly bind failure logging.
+To turn this feature off, remove the registry value [HKLM\Software\Microsoft\Fusion!EnableLog].
+
+Stack Trace:
+at TAL.OR.Web.Controllers.RegistrationController.GetAdviserDetails(DistributorAgreementViewModel model)
+at TAL.OR.Web.Controllers.Tests.RegistrationControllerTests.GetAdviserDetails_WithDistributorNo_GeneratesRegistrationModelforDistributor() in D:\AzureAgent_work\113\s\TAL.OnlineRegistrations.Web\TAL.OR.Web.Controllers.Tests\RegistrationControllerTests.cs:line 509
+
+Total tests: 34. Passed: 33. Failed: 1. Skipped: 0.
+Test Run Failed.
+Test execution time: 4.4560 Seconds
+
+
+
+PS C:\Program Files (x86)\Microsoft Visual Studio 14.0\Common7\IDE\CommonExtensions\Microsoft\TestWindow> .\vstest.console.exe "D:\AzureAgent_work\113\s\TAL.OnlineRegistrations.Web\TAL.OR.Web.Controllers.Tests\bin\Release\TAL.OR.Web.Controllers.Tests.dll"
+Microsoft (R) Test Execution Command Line Tool Version 14.0.23107.0
+Copyright (c) Microsoft Corporation.  All rights reserved.
+
+Starting test execution, please wait...
+Passed   Index_Called_RendersIndexView
+Passed   Activate_GetRequest_RedirectsToIndex
+Passed   Activate_GetRequest_RedirectsToDetails
+Passed   Details_GetRequest_RedirectsToIndex
+Passed   Details_GetRequest_RedirectsToDetails
+Passed   Submit_PostRequest_RedirectsToActivateResult
+Passed   Heartbeat_NoParameters_RendersHeartBeatView
+Passed   RegistrationController_NullRegistrationServiceAgent_ThrowsArgumentNullException
+Passed   RegistrationController_NullAdviserServiceAgent_ThrowsArgumentNullEException
+Passed   RegistrationController_NullAgreementServiceAgent_ThrowsArgumentNullEException
+Passed   RegistrationController_NullNotificationServiceAgent_ThrowsArgumentNullEException
+
+Total tests: 34. Passed: 34. Failed: 0. Skipped: 0.
+Test Run Successful.
+Test execution time: 4.1632 Second
+
+
+
+PS D:\AzureAgent_work_tool\VsTest\17.3.0\x64\tools\net451\Common7\IDE\Extensions\TestPlatform> .\vstest.console.exe "D:\AzureAgent_work\113\s\TAL.OnlineRegistrations.Web\TAL.OR.Web.Controllers.Tests\bin\Release\TAL.OR.Web.Controllers.Tests.dll"
+Microsoft (R) Test Execution Command Line Tool Version 17.3.0 (x64)
+Copyright (c) Microsoft Corporation.  All rights reserved.
+
+Starting test execution, please wait...
+A total of 1 test files matched the specified pattern.
+Passed Index_Called_RendersIndexView [915 ms]
+Passed Activate_GetRequest_RedirectsToIndex [6 ms]
+Passed Activate_GetRequest_RedirectsToDetails [28 ms]
+Passed Details_GetRequest_RedirectsToIndex [4 ms]
+Passed Details_GetRequest_RedirectsToDetails [2 ms]
+Passed Submit_PostRequest_RedirectsToActivateResult [5 ms]
+Passed Heartbeat_NoParameters_RendersHeartBeatView [< 1 ms]
+
+Test Run Successful.
+Total tests: 34
+Passed: 34
+Total time: 2.3878 Seconds
+
+
+
+Fifth Attempt (Automated Process): Passed
+
+Developer Task:
+
+Updated below files in /TAL.OnlineRegistrations.Web/TAL.OR.Web.Controllers.Tests folder in Azure Repo
+
+app.config
+
+packages.config
+
+TAL.OR.Web.Controllers.Tests.csproj
+
+app.config file:
+
+
+
+Find and replace 4.5.0 with 6.0.0
+
+        <bindingRedirect oldVersion="0.0.0.0-4.5.0.0" newVersion="4.5.0.0" />
+
+        <bindingRedirect oldVersion="0.0.0.0-6.0.0.0" newVersion="6.0.0.0" />
+
+
+
+packages.config file:
+
+
+
+Added below line
+
+  <package id="Newtonsoft.Json" version="6.0.1" targetFramework="net40" />
+
+
+
+TAL.OR.Web.Controllers.Tests.csproj file:
+
+
+
+Added below lines
+
+
+    <Reference Include="Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed, processorArchitecture=MSIL">
+      <HintPath>..\packages\Newtonsoft.Json.6.0.1\lib\net40\Newtonsoft.Json.dll</HintPath>
+      <Private>True</Private>
+    </Reference>
+
+
+
+DevOps Engineer Task:
+
+After developer requested us to run the pipeline then re-triggered the TAL.RLS.OnlineRegistrations-Web pipeline in Azure DevOps and it was successfully completed without any issues. 
+
+Pipelines - Runs for TAL.RLS.OnlineRegistrations-Web (azure.com)
+
+
+
+
+
+OnlineRegistrations Web - Release Pipeline Issue
+
+Issue details:
+
+Configuration Error
+
+Description: An error occurred during the processing of a configuration file required to service this request. Please review the specific error details below and modify your configuration file appropriately.
+
+Parser Error Message: The type initializer for 'Microsoft.Practices.EnterpriseLibrary.Common.Configuration.ObjectBuilder.EnterpriseLibraryFactory' threw an exception.
+
+Source Error:
+
+ 
+
+Line 100:            <providers>
+
+Line 101:                <clear/>
+
+Line 102:                <add name="IdmRoleProvider" type="TAL.Security.Provider.IdmRoleProvider, TAL.Security" connectionStringName="IdmConnection" connectionUsername="CN=adviseradm,ou=Power Users,ou=tower,dc=towerdev,dc=ovd" connectionPassword="Passw0rd" authenticationType="None" cacheEnabled="true" />
+
+Line 103:                <add name="ADRoleProvider" type="TAL.Security.Provider.ADRoleProvider, TAL.Security" connectionStringName="DomainController" connectionUsername="twrdev\sap1dev" connectionPassword="W@tershed" authenticationType="Secure" cacheEnabled="true" />
+
+Line 104:            </providers>
+
+
+
+Source File: D:\Content\registerdev.acceleratedProtection.com.au\wwwroot\tal\web.config    Line: 102
+
+Assembly Load Trace: The following information can be helpful to determine why the assembly 'Microsoft.Practices.ObjectBuilder2, Version=2.2.0.0, Culture=neutral, PublicKeyToken=31bf3856ad364e35' could not be loaded.
+
+Resolution details:
+
+We have identified below two dll files are missing and then updated those files into Azure Repo Dependencies folder that fixes the issue.
+
+Microsoft.Practices.ObjectBuilder2.dll
+
+Microsoft.Practices.Unity.dll
