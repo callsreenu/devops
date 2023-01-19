@@ -1,0 +1,182 @@
+trigger: none
+
+parameters:
+- name: TARGET_ENV
+  displayName: 'Target Environment'
+  type: string
+  default: akeso-dev
+  values:
+  - akeso-dev
+  - akeso-dev2
+  - akeso-sys1
+  - akeso-sys2
+  - akeso-sys1-nonsso
+  - akeso-uat
+  - akeso-prd
+# - name: JBOSS_VERSION
+#   displayName: JBoss Version
+#   type: string
+#   default: jboss-eap-7.3
+#   values:
+#   - jboss-eap-7.3
+#   - jboss-eap-7.4
+# - name: INSTALL_JBOSS_VERSION
+#   displayName: 'Install JBoss (once per JBoss Version per Host)'
+#   type: boolean
+#   default: true
+- name: FINEOSIFY
+  displayName: 'Apply FINEOS-specified JBoss Configuration settings'
+  type: boolean
+  default: true
+- name: CREATE_EXAMPLE_DATASOURCES
+  displayName: 'Create example Datasources'
+  type: boolean
+  default: false
+
+variables: # Global variables
+  - group: ${{ parameters.TARGET_ENV }}-secrets
+  - template: variables/${{ parameters.TARGET_ENV }}.yml # Template reference
+    parameters:
+      CREATE_EXAMPLE_DATASOURCES: "${{ parameters.CREATE_EXAMPLE_DATASOURCES }}"
+
+pool:
+  name: AkesoJBossProvisioning
+  demands:
+  - TARGET_ENV -equals $(TARGET_ENV)
+  - Agent.ComputerName -equals $(TARGET_HOST)
+  - WEB -equals true
+    #- Agent.ComputerName -equals dc2sys174
+
+stages:
+
+- stage: CLEAN
+  jobs:
+
+  - job: Remove_Existing
+    displayName: (PLATFORM) Remove JBoss
+    steps:
+    - task: Bash@3
+      inputs:
+        targetType: 'inline'
+        script: 'env | sort'
+
+    - task: Bash@3
+      displayName: Clean the target environment
+      inputs:
+        filePath: jboss/000_remove_jboss_version.sh
+
+- stage: Initial_Setup
+  jobs:
+  - job: Initial_Setup
+    displayName: (PLATFORM) Initial Setup for FINEOS (User, home folder etc.)
+    steps:
+
+      - task: Bash@3
+        displayName: Initial Setup for JBOSS
+        inputs:
+          filePath: jboss/001_create_local_account.sh
+
+      - task: Bash@3
+        displayName: Initial Setup for FINEOS
+        inputs:
+          filePath: fineos/001_create_local_account.sh
+
+- stage: Install_JBoss
+  jobs:
+
+  - job: InstallJBossAndPublishSecureProfile
+    displayName: (PLATFORM) Install JBoss
+    steps:
+    - task: Bash@3
+      displayName: Display execution vars
+      inputs:
+        filePath: jboss/debug_banner.sh
+
+    - task: Bash@3
+      inputs:
+        targetType: 'inline'
+        script: 'env | sort'
+
+    - task: Bash@3
+      displayName: Torch everything
+      inputs:
+        filePath: jboss/000_remove_jboss_version.sh
+
+    - task: Bash@3
+      displayName: Install Java
+      inputs:
+        filePath: jboss/010_install_java.sh
+
+    - task: Bash@3
+      displayName: Install JBoss version
+      inputs:
+        filePath: jboss/020_install_jboss_version.sh
+
+    - task: Bash@3
+      displayName: Apply Security Hardening
+      condition: succeeded()
+      inputs:
+        filePath: jboss/030_apply_security_hardening(legacy).sh
+      env:
+        KEYPASS: $(KEYPASS)
+        STOREPASS: $(STOREPASS)
+        JBOSS_ADMIN_PASSWORD: $(JBOSS_ADMIN_PASSWORD)
+
+    - task: Bash@3
+      displayName: Configure JDBC Driver(s)
+      condition: succeeded()
+      inputs:
+        filePath: jboss/031_configure_jdbc_drivers.sh
+
+    - task: Bash@3
+      displayName: FINEOS Config Tweaks
+      condition: and(succeeded(), eq(${{ parameters.FINEOSIFY }}, 'true'))
+      inputs:
+        filePath: fineos/tweak_jboss_configuration.sh
+      env:
+        KEYPASS: $(KEYPASS)
+        STOREPASS: $(STOREPASS)
+        DB_USER_PASS: $(DB_USER_PASS)
+        DB_USER_PASS_APP: $(DB_USER_PASS_APP)
+        DB_USER_PASS_SEC: $(DB_USER_PASS_SEC)
+        DB_USER_PASS_ANAAPP: $(DB_USER_PASS_ANAAPP)
+        DB_USER_PASS_ANASEC: $(DB_USER_PASS_ANASEC)
+
+    - task: Bash@3
+      displayName: Configure Example Datasource(s)
+      condition: and(succeeded(), eq(${{ parameters.CREATE_EXAMPLE_DATASOURCES }}, 'true'))
+      inputs:
+        filePath: jboss/032_configure_example_datasources.sh
+      env:
+        KEYPASS: $(KEYPASS)
+        STOREPASS: $(STOREPASS)
+        DB_USER_PASS: $(DB_USER_PASS)
+        DB_USER_PASS_APP: $(DB_USER_PASS_APP)
+        DB_USER_PASS_SEC: $(DB_USER_PASS_SEC)
+        DB_USER_PASS_ANAAPP: $(DB_USER_PASS_ANAAPP)
+        DB_USER_PASS_ANASEC: $(DB_USER_PASS_ANASEC)
+
+    - task: Bash@3
+      displayName: Create secure profile
+      condition: succeeded()
+      inputs:
+        filePath: jboss/035_create_secure_profile.sh
+
+- stage: Publish_TAL_Secure_Profile
+  jobs:
+  - job: Publish
+    displayName: (PLATFORM) Publish Security Hardened Profile 
+    steps:
+    - task: PublishPipelineArtifact@1
+      displayName: Publish SECURE_PROFILE Pipeline artifact
+      condition: succeeded()
+      inputs:
+        path: '${{ variables.JBOSS_BASE }}/${{ variables.JBOSS_VERSION }}/TAL-${{ variables.JBOSS_VERSION }}-secure-profile.zip'
+        artifactName: 'TAL-${{ variables.JBOSS_VERSION }}-secure-profile'
+        
+    # - task: Bash@3
+    #   displayName: Establish Shared PKI
+    #   inputs:
+    #     script: |
+    #       sudo rm -Rf ${JBOSS_HOME}/TAL-${JBOSS_VERSION}-secure-profile.zip
+
