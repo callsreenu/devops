@@ -1,0 +1,67 @@
+# Starter pipeline
+# Start with a minimal pipeline that you can customize to build and deploy your code.
+# Add steps that build, run tests, deploy, and more:
+# https://aka.ms/yaml
+
+trigger:
+#- master
+- develop
+
+pool:
+  name: 'AzureBuildAgents'
+  demands:
+  - agent.name -equals DC1PRDBLDAGT001
+
+variables:
+  solution: 'TAL.OnlineRegistrations.Web/TAL.OnlineRegistrations.Web.sln'
+  buildPlatform: 'Any CPU'
+  buildConfiguration: 'Release'
+
+steps:
+- task: NuGetToolInstaller@1
+  inputs:
+    versionSpec: '4.1.0'
+
+- task: NuGetCommand@2
+  displayName: 'Nuget Restore'
+  inputs:
+    command: 'restore'
+    restoreSolution: '$(solution)'
+    restoreDirectory: '$(System.DefaultWorkingDirectory)\packages'
+
+- task: VSBuild@1
+  inputs:
+    solution: '$(solution)'
+    msbuildArgs: '/p:ReferencePath="D:\Program Files (x86)\Microsoft Enterprise Library 4.1 - October 2008\Bin"'
+    platform: '$(buildPlatform)'
+    configuration: '$(buildConfiguration)'
+- task: VSTest@2
+  inputs:
+    testSelector: 'testAssemblies'
+    testAssemblyVer2: |
+      **\TAL.OR.Web.Agents.Tests.dll
+      **\TAL.OR.Web.Common.UnitTests.dll
+      **\TAL.OR.Web.Controllers.Tests.dll
+      **\TAL.OR.Web.TestDataBuilders.dll
+      !**\*TestAdapter.dll
+      !**\obj\**
+    searchFolder: '$(System.DefaultWorkingDirectory)'
+    vsTestVersion: '14.0'
+    platform: '$(buildPlatform)'
+    configuration: '$(buildConfiguration)'
+
+# Nuget Pack
+- task: NuGetCommand@2
+  inputs:
+    command: 'pack'
+    packagesToPack: 'TAL.OnlineRegistrations.Web/TAL.OR.Web/TAL.OR.Web.nuspec'
+    versioningScheme: 'byEnvVar'
+    versionEnvVar: 'Build.BuildNumber'
+
+# Push the Nuget packages to Azure Artifacts
+- task: NuGetCommand@2
+  inputs:
+    command: 'push'
+    packagesToPush: '$(Build.ArtifactStagingDirectory)/**/*.nupkg;!$(Build.ArtifactStagingDirectory)/**/*.symbols.nupkg'
+    nuGetFeedType: 'internal'
+    publishVstsFeed: 'f2a02f01-199c-4371-a899-36795fda21b5/a8808fb1-27f4-4381-b953-9f220323d9a5'
