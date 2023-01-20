@@ -1,0 +1,45 @@
+TAL Azure Devops
+	Roles & Responsibilities
+	Tools
+	 -	TFS
+		  GitLab
+		  Octopus
+		  TeamCity
+		  AzureDevOps
+		  Azure Portal
+	Platforms
+		Group 
+		  Access Requirements
+		  TFS
+		  GitLab
+		  Octopus
+		  TeamCity
+		  AzureDevOps
+		  Azure Portal
+		  
+		  Infrastructure details
+			a).Server Details
+			b).Environment Details
+		  Octopus Environment
+		  Team City Environment
+		  TFS Environment
+		  Project Migration Plan
+		  Azure DevOps Environment
+		  1. Requirements gathering from Application Team
+		  2. Project Setup
+			 a). Project creation
+			 b). AD groups configuration
+			 c). User permissions configuration
+			 d). Process to whitelist the firewalls
+			 e). Agents installation and configuration	 
+		  3. Azure Repo details
+			 a). Source code details ( Nexus / GitLab / GitHub / TFS)
+		  4. Azure Artifact details
+		  5. Azure Pipeline details     
+			  a). Build Pipeline
+			  b). Release Pipeline
+		Retail
+		Claims
+		Direct
+		Nelson Program
+		Data Platform 
