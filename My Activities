@@ -1,0 +1,152 @@
+Deployment Pool & Deployment Groups:
+	Teams need to raise their request through Service Portal - Service Portal  
+
+	Deployment Pool exists at the account level and is the actual container of the deployment agents (targets)
+
+	Deployment Pool will be named as <PlatformName>.<POD>.<ENV> e.g. GLS.GRP.DEV1, GLS.GRP.DEV2
+	PlatformName should be one of these values:
+
+	Group - GLS
+	Retail - RLS
+	Digital - Digital
+	Data and Analytics - DnA
+	Claims - CLM
+	Direct - DIR
+	Cyber - CYB
+	Continuous Delivery - CD
+	
+	Deployment Pool can be shared across multiple projects
+	Deployment Group name is generated as <ProjectName>-<DeploymentPoolName>
+	The project teams can add tags to the target machines within each deployment group. e.g. web, ,app, db. These tags are project scoped and do not impact tags applied to same targets within a different project’s deployment groups.
+
+Overview on Azure DevOps:
+
+	Azure DevOps services (formerly Visual Studio Team Services) is a hosted and managed service by Microsoft Azure. Microsoft Azure provides both Azure DevOps Services and Azure DevOps server for implementation of DevOps.
+
+	Azure DevOps Services is a cloud offering that is managed by Azure with 99.9% SLA. (approximately 45 minutes downtime per week!)
+	Azure DevOps Server is an on-premise offering that has to be managed by companies.
+	This document scope is to cover the strategies for leveraging Azure DevOps services.Azure DevOps can contain many Organizations. An Azure DevOps Organization can contain multiple Azure Projects.An Azure Project can contain many Boards, Repos, Pipelines and Artifacts. The following diagram illustrates the Azure DevOps services at a high level.
+
+Organization:
+
+	A group of related applications gets an Azure Organization. According to Azure, the required number of Azure Organizations depends on how a company wants to govern the information flow within the department.
+
+	If a company wants to restrict one department to view another department's projects ,build and deployment detail, a separate Organization is required to isolate from each other.
+
+	However, keeping the related projects within the same organization fosters collaboration.
+
+	Evaluation Parameters	One Organization for Entire TAL	One Organization per Department(Direct, Retail etc)	
+	Agent pool			Common Agent pool for entire TAL	The agent pools can not be shared with other departments	
+	deployment pool 	Deployment pool can be shared across projects entire Organization	Deployment pool is can not be shared with other departments	
+	AD integration		Single AD integration for TAL	Integrate AD for each department	
+	Billing				Single Billing for TAL	Each department gets a separate bill	
+	Projects			All the projects are under single roof	Each departments have its own list of projects
+	FREE Parallel jobs for Self-hosted agents		One Free for entire project	One free for each Department	
+	Cost Saved			Approx $20.6 per each additional parallel job per month	$210 Saved per month if there are 10 departments	
+	Security policy		Same policy for entire TAL	Policies have to be maintained across each department	
+	Pipeline Settings	Same settings for entire TAL	Settings have to be managed for each department	
+
+	After comparing and contrasting all the parameters, it is effective to keep a Single Azure DevOps Organization across TAL.
+	There is already an Azure DevOps Organization in TAL with the name TALContinuousDelivery that can be reused as such Or we just change the naming of TAL to suit entire TAL 
+	The Organization must be hosted only in Australia East.
+
+There are two approaches while selecting the number of required Organization for TAL. The following table compares and contrasts the two approaches
+
+1. Online Registrations:
+    Build Pipeline:
+	1. Configure Trigger, pool details, variables
+	2. NuGetToolInstaller
+	3. NuGetCommand to restore nuget packages
+	4. VSBuild to build the code
+	5. VSTest to run the dll and skip, which are not required
+	6. Nuget pack for packing the code
+	7. NuGetCommand to push the code to repository
+	
+	 Release Pipeline:
+	 1. Create variable groups for DEV, QA
+	 2. Create deployment group and specify the agent details and artifact deails. 
+	 3. Creaetetask group
+		- Create/Update App Pool
+		- Stop Application Pool
+		- Creating Website
+		- Creating Web Application
+		- Deploy $(Application.Name) Application 
+		- Replace tokens in **/*.config
+		- Delete files from $(Web.Application.Physical.Path)
+		- Start Application Pool
+	 
+2. Akeso
+	1.Generate PKI Assets
+	1.1 Certificate Copy
+	2. Provision JBoss Platform
+	3. Provision AKESO JBoss Instances
+	4. Deploy AKESO Web Applications
+	6. Start AKESO JBoss Instance(s)
+	7. Stop AKESO JBoss Instance(s)
+	901. Deploy Single Users (CLASSIC)
+
+3. TAL.CLM.Akeso.JavaAppDeploy
+	1. Trigger none
+	2. Parameters for diff envs
+	3. Global Variable templete
+	  - template: variables/${{ parameters.TARGET_ENV }}.yml # Template reference
+	4. AkesoDownload Akeso Version
+	5. Download Akeso Files from Nexus
+	6. Download workperformer/fineos-unpacker/claimsbatches/environmentcreator
+	7. PublishPipelineArtifact
+	8. Delete files from the staging area
+	9. Deploy Java Apps
+
+		- stage: PrepFileSystem
+		  displayName: Java Apps Deploy
+		  jobs:
+		  - job: CreateDirectories
+			displayName: Deploy Java Apps
+			pool:
+			  name: AkesoJBossProvisioning
+			  demands:
+			  #- agent.TARGET_ENV -equals $(TARGET_ENV)
+			  #- agent.JAVA -equals 'true'
+			  - agent.name -equals dc1dev375
+			  #- TARGET_ENV -equals $(TARGET_ENV)
+			  #- Agent.ComputerName -equals $(TARGET_HOST)
+			  #- WEB -equals true
+			steps:
+			
+			- ${{ if eq(parameters.INCLUDE_JAVA_WORKPERFORMER, true) }}:
+			  - task: Bash@3
+				displayName: Deploy WORKPERFORMER
+				inputs:
+				  filePath: fineos/100_deploy_java_app_workperformer.sh
+				env:
+				  DB_USER_PASS: $(DB_USER_PASS)
+				  ARTIFACT_PATH: $(Build.ArtifactStagingDirectory)/drop-$(version_tal)/fineos-workperformer-89.1.1.zip    
+			- ${{ if eq(parameters.INCLUDE_JAVA_CLAIMSBATCHES, true) }}:
+			  - task: CopyPublishBuildArtifacts@1
+				inputs:
+				  Contents: '**'
+				  ArtifactName: drop-${{ parameters.version_tal }}/fineos-workperformer-89.1.1.zip
+				  ArtifactType: 'Container'
+
+4. Cost Optimization
+   1. Create release pipeline
+   2. Agent job
+   3. Azure PowerShell script: InlineScript
+      a). Provide Azure Subscription details
+	  b). Run below script
+	  Set-AzSqlDatabase -DatabaseName $(KAFTA_DATA_db) -ServerName $(ServerName) -ResourceGroupName $(ResourceGroupName) -Edition $(NewEditionStandard) -RequestedServiceObjectiveName $(NewPricingTier)
+	
+5. TFS Migration - Attached PDF
+6. Azure BIU Tasks
+   1. Organization Settings -> General->Users-> Serach the user provide Access Level as Basic and License Source as Direct
+   2. Organization Settings -> Security -> Permissions -> provide below access
+		a. Administrator  - Members of this application group can perform all privileged operations on the Team Project Collection.
+		b. Contributor
+		c. Reader - The members of this group will have read-only access to all projects of the direct platform
+		d. Proxy Service Account - This group should only include service accounts used by proxies set up for this team project collection.
+		e. Security Service Group - Identities which are granted explicit permission to a resource will be automatically added to this group if they were not previously a member of any other group.
+	3. Install Agent pools and Deployment pools
+
+	  
+7. KTA Terraform - Attached the code and PDF
+ 
